@@ -1,0 +1,4 @@
+{
+  "plugins": ["typescript-deno-plugin"],
+  "target": "es2017"
+}
