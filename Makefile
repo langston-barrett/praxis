@@ -83,12 +83,14 @@ $(OUT)/%.test.ts.log: %.out $(TS) $(INS) $(OUT)
 	echo cat "$(<:.out=.in)" \| deno run $(DENO_RUN_FLAGS) "$$ts"
 	cat "$(<:.out=.in)" | $(DENO_ENV) $(DENO) run $(DENO_RUN_FLAGS) "$$ts" > "$@.debug" || true
 	cat "$@.debug" | grep -v DEBUG > "$@" || true
-	if [[ $$(cat "$<") != $$(cat "$@") ]]; then
+	difference=$$(diff -u "$<" "$@" || true)
+	printf "%s\n" "$$difference" > "$@.diff"
+	if [[ -n $$difference ]]; then
 	  printf "Test failed: %s\n" "$<"
 	  printf "Debug output: \n%s\n" "$$(cat $@.debug | grep DEBUG)"
 	  printf "Expected:\n%s\n\n" "$$(cat $<)"
 	  printf "Actual:\n%s\n\n" "$$(cat $@)"
-	  printf "Diff:\n%s\n" "$$(diff $< $@)"
+	  printf "Diff:\n%s\n" "$$difference"
 	fi
 
 $(OUT)/%.ts.js: %.ts $(OUT)

@@ -105,9 +105,12 @@ type Stack = Array<number>;
 
 export const EVAL_ERROR_BINOP_STACK = "Just a binop on the stack.";
 export const EVAL_ERROR_EMPTY_STACK = "Empty stack!";
+export const EVAL_ERROR_ZERO_DIV = "Divide by zero!";
+export const EVAL_ERROR_NO_PROGRAM = "No program!";
 export type EvalError =
   | { err: typeof EVAL_ERROR_BINOP_STACK; binOp: BinOp }
-  | { err: typeof EVAL_ERROR_EMPTY_STACK; prog: Program };
+  | { err: typeof EVAL_ERROR_EMPTY_STACK; prog: Program }
+  | { err: typeof EVAL_ERROR_ZERO_DIV; numerator: number; prog: Program };
 
 function showEvalError(e: Readonly<EvalError>): Message {
   return errorMessage(e.err);
@@ -118,11 +121,12 @@ type Step = {
   readonly stack: Stack;
 };
 
+// pre: if op2 == 0, then binOp != "/"
 function evaluateBinOp(
   binOp: Readonly<BinOp>,
   op1: Readonly<number>,
   op2: Readonly<number>,
-): number {
+): number | typeof EVAL_ERROR_ZERO_DIV {
   if (binOp === "+") {
     return op1 + op2;
   }
@@ -133,6 +137,9 @@ function evaluateBinOp(
     return op1 * op2;
   }
   if (binOp === "/") {
+    if (op2 === 0) {
+      return EVAL_ERROR_ZERO_DIV;
+    }
     return op1 / op2;
   }
   console.assert(false);
@@ -157,7 +164,12 @@ function step(s: Readonly<Step>): EvalError | undefined {
       s.prog.unshift(top);
       return { err: EVAL_ERROR_EMPTY_STACK, prog: s.prog };
     }
-    s.stack.unshift(evaluateBinOp(top, op2, op1));
+    const result = evaluateBinOp(top, op2, op1);
+    if (result === EVAL_ERROR_ZERO_DIV) {
+      s.prog.unshift(top);
+      return { err: result, numerator: op1, prog: s.prog };
+    }
+    s.stack.unshift(result);
     return undefined;
   }
   s.stack.unshift(top);
@@ -222,7 +234,7 @@ async function read(): Promise<string> {
     let bufStr = decoder.decode(buf);
     // Weird: Have to manually remove all trailing null bytes
     bufStr = bufStr.replace(/\0+$/, "");
-    log("read: " + bufStr.trim());
+    log("read: " + bufStr.trim().replace(/\n/g, " "));
     str = str + bufStr;
   }
   return str;
@@ -230,8 +242,22 @@ async function read(): Promise<string> {
 
 async function readLines(): Promise<Array<string>> {
   const data = await read();
-  log("data: " + data.trim());
+  log("data: " + data.trim().replace(/\n/g, " "));
   return data.split("\n");
+}
+
+async function readNonEmptyLines(): Promise<Array<string>> {
+  const nonempty = [];
+  const lines = await readLines();
+  while (true) {
+    const top = lines.shift();
+    if (top === undefined) {
+      return nonempty;
+    }
+    if (top.trim() !== "") {
+      nonempty.unshift(top);
+    }
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -251,8 +277,13 @@ async function log(s: Readonly<string>) {
 async function realMain(): Promise<void> {
   log("main");
   let exit = 0;
-  const lines = await readLines();
+  const lines = await readNonEmptyLines();
   log("lines: " + lines);
+
+  // Make the output newline-delimited in any case
+  if (lines.length === 0) {
+    printLine("" as Message);
+  }
   while (true) {
     const line = lines.shift();
     if (line === undefined || line === "") {
