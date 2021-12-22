@@ -37,6 +37,7 @@ SEMGREP_FLAGS := --config p/ci --error --quiet --strict
 SEMGREP_DIRS := praxis
 RADAMSA_FLAGS :=
 RADAMSA_TESTCASES := 64
+RADAMSA_TIMEOUT := 30s
 
 ## Typescript
 TSC_FLAGS := \
@@ -129,7 +130,7 @@ $(OUT)/%.radamsa.ts.log: %.main.ts $(INS)
 	for i in $$(seq 0 $(RADAMSA_TESTCASES)); do
 	  $(RADAMSA) $(RADAMSA_FLAGS) "$$d"/*.in > "$(OUT)/$$d/radamsa-$$i"
 	  echo cat "$(OUT)/$$d/$$i" \| deno run "$$ts"
-	  cat "$(OUT)/$$d/radamsa-$$i" | $(DENO_ENV) $(DENO) run $(DENO_RUN_FLAGS) "$$ts" >> "$@" || true
+	  cat "$(OUT)/$$d/radamsa-$$i" | timeout $(RADAMSA_TIMEOUT) $(DENO_ENV) $(DENO) run $(DENO_RUN_FLAGS) "$$ts" >> "$@" || true
 	done
 
 $(OUT)/%.ts.js: %.ts $(OUT)
