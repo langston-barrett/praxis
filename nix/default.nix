@@ -6,6 +6,7 @@ in pkgs.mkShell {
   buildInputs = [
     # semgrep
     pkgs.python3Packages.virtualenv
+    pkgs.radamsa
 
     # TypeScript
     pkgs.deno

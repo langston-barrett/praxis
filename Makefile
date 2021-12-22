@@ -10,8 +10,10 @@ VENV := $(VENV_DIR)/bin/activate
 
 ## Typescript
 TS_LIB := $(shell find . -name "*.lib.ts")
+TS_MAIN := $(shell find . -name "*.main.ts")
 TS := $(shell find . -name "*.ts")
 DENO_DIR := $(OUT)/deno
+TS_RADAMSA_TGTS := $(addprefix $(OUT)/,$(TS_MAIN:.main.ts=.radamsa.ts.log))
 
 ## All
 SRC := $(TS)
@@ -22,6 +24,7 @@ TEST_DIRS := $(shell find praxis -mindepth 1 -type d)
 # Executables
 
 SEMGREP := semgrep
+RADAMSA := radamsa
 
 ## Typescript
 TSC := tsc
@@ -32,6 +35,8 @@ DENO := deno
 SEMGREP_CONFIG := semgrep.yaml
 SEMGREP_FLAGS := --config p/ci --error --quiet --strict
 SEMGREP_DIRS := praxis
+RADAMSA_FLAGS :=
+RADAMSA_TESTCASES := 64
 
 ## Typescript
 TSC_FLAGS := \
@@ -70,7 +75,10 @@ $(VENV_DIR)/requirements.log: requirements.txt $(VENV) $(OUT)
 	@echo "pip install -r requirements.txt"
 	@./$(VENV_DIR)/bin/pip install -q -r requirements.txt |& tee "$@"
 
-%.main.ts: %.lib.ts $(OUT)
+%.lib.ts: $(OUT)
+	@touch "$@"
+
+%.main.ts: %.lib.ts
 	@touch "$@"
 
 %.test.ts: %.lib.ts
@@ -99,7 +107,7 @@ $(OUT)/%.lib.ts.unit.log: %.test.ts $(OUT)
 $(OUT)/%.test.ts.log: %.out $(TS) $(INS) $(OUT)
 	@mkdir -p "$(dir $@)"
 	ts="$(shell dirname $<).main.ts"
-	echo cat "$(<:.out=.in)" \| deno run $(DENO_RUN_FLAGS) "$$ts"
+	echo cat "$(<:.out=.in)" \| deno run "$$ts"
 	cat "$(<:.out=.in)" | $(DENO_ENV) $(DENO) run $(DENO_RUN_FLAGS) "$$ts" > "$@.debug" || true
 	cat "$@.debug" | grep -v DEBUG > "$@" || true
 	difference=$$(diff -u "$<" "$@" || true)
@@ -111,6 +119,18 @@ $(OUT)/%.test.ts.log: %.out $(TS) $(INS) $(OUT)
 	  printf "Actual:\n%s\n\n" "$$(cat $@)"
 	  printf "Diff:\n%s\n" "$$difference"
 	fi
+
+# TODO(lb): Construct a regex verifier for lines of output for each problem
+$(OUT)/%.radamsa.ts.log: %.main.ts $(INS)
+	@mkdir -p "$(dir $@)"
+	ts="$<"
+	d="$(<:.main.ts=)"
+	mkdir -p "$(OUT)/$$d"
+	for i in $$(seq 0 $(RADAMSA_TESTCASES)); do
+	  $(RADAMSA) $(RADAMSA_FLAGS) "$$d"/*.in > "$(OUT)/$$d/radamsa-$$i"
+	  echo cat "$(OUT)/$$d/$$i" \| deno run "$$ts"
+	  cat "$(OUT)/$$d/radamsa-$$i" | $(DENO_ENV) $(DENO) run $(DENO_RUN_FLAGS) "$$ts" >> "$@" || true
+	done
 
 $(OUT)/%.ts.js: %.ts $(OUT)
 	@mkdir -p "$(dir $@)"
@@ -140,6 +160,9 @@ typescript: ts-fmt ts-lint ts-unit ts-test
 .PHONY: fmt
 fmt: ts-fmt
 
+.PHOHY: ts-radamsa
+ts-radamsa: $(TS_RADAMSA_TGTS)
+
 .PHONY: venv
 venv: $(VENV)
 
@@ -158,9 +181,12 @@ unit: ts-unit
 .PHONY: test
 test: ts-test
 
+.PHOHY: radamsa
+radamsa: ts-radamsa
+
 .DEFAULT: all
 .PHONY: all
-all: fmt lint unit test
+all: fmt lint unit test radamsa
 
 .PHONY: entr
 entr:
