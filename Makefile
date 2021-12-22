@@ -2,6 +2,7 @@ SHELL := $(shell which bash)
 .SHELLFLAGS := -euc
 OUT := ./out
 DEBUG := 0
+FIND_IGNORES := -not -path '*/out/*'
 
 # Files and directories
 
@@ -9,17 +10,17 @@ VENV_DIR := $(OUT)/venv
 VENV := $(VENV_DIR)/bin/activate
 
 ## Typescript
-TS_LIB := $(shell find . -name "*.lib.ts")
-TS_MAIN := $(shell find . -name "*.main.ts")
-TS := $(shell find . -name "*.ts")
+TS_LIB := $(shell find . -name "*.lib.ts" $(FIND_IGNORES))
+TS_MAIN := $(shell find . -name "*.main.ts" $(FIND_IGNORES))
+TS := $(shell find . -name "*.ts" $(FIND_IGNORES))
 DENO_DIR := $(OUT)/deno
 TS_RADAMSA_TGTS := $(addprefix $(OUT)/,$(TS_MAIN:.main.ts=.radamsa.ts.log))
 
 ## All
 SRC := $(TS)
-INS := $(shell find . -name "*.in")
-OUTS := $(shell find . -name "*.out")
-TEST_DIRS := $(shell find praxis -mindepth 1 -type d)
+INS := $(shell find . -name "*.in" $(FIND_IGNORES))
+OUTS := $(shell find . -name "*.out" $(FIND_IGNORES))
+TEST_DIRS := $(shell find praxis -mindepth 1 -type d $(FIND_IGNORES))
 
 # Executables
 
@@ -124,13 +125,18 @@ $(OUT)/%.test.ts.log: %.out $(TS) $(INS) $(OUT)
 # TODO(lb): Construct a regex verifier for lines of output for each problem
 $(OUT)/%.radamsa.ts.log: %.main.ts $(INS)
 	@mkdir -p "$(dir $@)"
+	rm -f "$@"
 	ts="$<"
 	d="$(<:.main.ts=)"
 	mkdir -p "$(OUT)/$$d"
 	for i in $$(seq 0 $(RADAMSA_TESTCASES)); do
-	  $(RADAMSA) $(RADAMSA_FLAGS) "$$d"/*.in > "$(OUT)/$$d/radamsa-$$i"
-	  echo cat "$(OUT)/$$d/$$i" \| deno run "$$ts"
-	  cat "$(OUT)/$$d/radamsa-$$i" | timeout $(RADAMSA_TIMEOUT) $(DENO_ENV) $(DENO) run $(DENO_RUN_FLAGS) "$$ts" >> "$@" || true
+	  in="$(OUT)/$$d/radamsa-$$i.in"
+	  out="$(OUT)/$$d/radamsa-$$i.out"
+	  $(RADAMSA) $(RADAMSA_FLAGS) "$$d"/*.in > "$$in"
+	  echo cat "$$in" \| deno run "$$ts"
+	  cat "$$in" | timeout $(RADAMSA_TIMEOUT) $(DENO_ENV) $(DENO) run $(DENO_RUN_FLAGS) "$$ts" > "$$out" || true
+	  cat "$$out" | ./$$d/recognize.py
+	  cat "$$out" >> "$@"
 	done
 
 $(OUT)/%.ts.js: %.ts $(OUT)
