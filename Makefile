@@ -1,9 +1,12 @@
 SHELL := $(shell which bash)
-.SHELLFLAGS := -ec
+.SHELLFLAGS := -euc
 OUT := ./out
 DEBUG := 0
 
 # Files and directories
+
+VENV_DIR := $(OUT)/venv
+VENV := $(VENV_DIR)/bin/activate
 
 ## Typescript
 TS_LIB := $(shell find . -name "*.lib.ts")
@@ -18,11 +21,17 @@ TEST_DIRS := $(shell find praxis -mindepth 1 -type d)
 
 # Executables
 
+SEMGREP := semgrep
+
 ## Typescript
 TSC := tsc
 DENO := deno
 
 # Flags
+
+SEMGREP_CONFIG := semgrep.yaml
+SEMGREP_FLAGS := --config p/ci --error --quiet --strict
+SEMGREP_DIRS := praxis
 
 ## Typescript
 TSC_FLAGS := \
@@ -38,6 +47,8 @@ DENO_RUN_FLAGS := \
 
 # Targets
 
+DEPS := $(VENV_DIR)/requirements.log
+
 ## Typescript
 TS_OUT := $(addprefix $(OUT)/,$(TS:=.out))
 TS_JS := $(addprefix $(OUT)/,$(TS:=.js))
@@ -51,6 +62,13 @@ TS_TEST := $(addprefix $(OUT)/,$(INS:.in=.test.ts.log))
 
 $(OUT): Makefile
 	mkdir -p $(OUT)
+
+$(VENV) $(VENV_DIR): $(OUT)
+	virtualenv $(VENV_DIR)
+
+$(VENV_DIR)/requirements.log: requirements.txt $(VENV) $(OUT)
+	@echo "pip install -r requirements.txt"
+	@./$(VENV_DIR)/bin/pip install -q -r requirements.txt |& tee "$@"
 
 %.main.ts: %.lib.ts $(OUT)
 	@touch "$@"
@@ -69,6 +87,7 @@ $(OUT)/%.ts.lint.log: %.ts $(OUT)
 	ts="$(filter %.ts,$^)"
 	echo deno lint "$$ts"
 	$(DENO_ENV) $(DENO) lint "$$ts" > "$@"
+
 
 $(OUT)/%.lib.ts.unit.log: %.test.ts $(OUT)
 	@mkdir -p "$(dir $@)"
@@ -99,6 +118,10 @@ $(OUT)/%.ts.js: %.ts $(OUT)
 	echo $(TSC) "$$ts"
 	$(TSC) $(TSC_FLAGS) --outFile "$@" "$$ts"
 
+$(OUT)/semgrep.log: $(SRC) $(OUT)
+	@echo $(SEMGREP)
+	$(SEMGREP) $(SEMGREP_FLAGS) $(SEMGREP_DIRS) |& tee "$@"
+
 .PHONY: ts-fmt
 ts-fmt: $(TS_FMT)
 
@@ -117,8 +140,17 @@ typescript: ts-fmt ts-lint ts-unit ts-test
 .PHONY: fmt
 fmt: ts-fmt
 
+.PHONY: venv
+venv: $(VENV)
+
+.PHONY: deps
+deps: $(DEPS)
+
+.PHONY: semgrep
+semgrep: $(OUT)/semgrep.log
+
 .PHONY: lint
-lint: ts-lint
+lint: ts-lint semgrep
 
 .PHONY: unit
 unit: ts-unit
